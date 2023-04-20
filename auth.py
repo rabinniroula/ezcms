@@ -8,36 +8,27 @@ from db import runQuery
 from dotenv import load_dotenv
 import os
 
+DEBUG: bool = True
+debug = lambda msg: print(msg) if DEBUG else None
+
 load_dotenv()
-
-class password_wrong_exception(BaseException):
-    def __init__(self) -> None:
-        super().__init__("Password is wrong!")
-
-class token_wrong_exception(BaseException):
-    def __init__(self) -> None:
-        super().__init__("Token is wrong!")
-
-class token_expired_exception(BaseException):
-    def __init__(self) -> None:
-        super().__init__("Token is expired! Login again!")
-        
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated=["auto"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def getToken(username: str, password: str) -> any:
-    user = authenticateUser(username, password)
-    if not user:
-        raise password_wrong_exception
+    authResult = authenticateUser(username, password)
+    if not authResult:
+        debug("Username or password is wrong!")
+        return False
     accessToken = createAccessToken({"username": username})
     return accessToken
 
 def authenticateUser(uname: str, pwd: str) -> bool:
     try:
-        retrievedPwd = runQuery(f"SELECT password FROM `users` WHERE username='{uname}'")[0][0]
+        retrievedPwd = runQuery(f"SELECT password FROM `users` WHERE username='{uname}'")[0][0]     # Need to use a better method than fetchall here. fetchall returns a list
     except:
-        raise password_wrong_exception
+        return False
     if pwd_context.verify(pwd, retrievedPwd):
         return True
     else:
@@ -50,13 +41,15 @@ def createAccessToken(data: dict) -> str:
     encoded = jwt.encode(toEncode, key = os.getenv("SECRET_KEY"), algorithm=os.getenv("ALGORITHM"))
     return encoded
 
-def verifyToken(token: Annotated[str, Depends(oauth2_scheme)]) -> dict:
+def verifyToken(token: Annotated[str, Depends(oauth2_scheme)]) -> any:
     timenow = int(datetime.utcnow().timestamp())
     try:
         payload = jwt.decode(token, os.getenv("SECRET_KEY"), algorithms=[os.getenv("ALGORITHM")])
     except JWTError:
-        raise token_wrong_exception
+        debug("Token is wrong!")
+        return False
     expiryTime = payload["expiresIn"]
     if expiryTime >= timenow:
-        raise token_expired_exception
+        debug('Token is expired!')
+        return False
     return payload
